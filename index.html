@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Financial Sonification</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #ffffff;
+    --bg2: #f5f4f0;
+    --bg3: #ededea;
+    --text: #1a1a18;
+    --text2: #6b6b67;
+    --text3: #9b9b96;
+    --border: rgba(0,0,0,0.12);
+    --border2: rgba(0,0,0,0.22);
+    --blue: #378ADD;
+    --green: #639922;
+    --amber: #BA7517;
+    --red: #E24B4A;
+    --purple: #7F77DD;
+    --teal: #1D9E75;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a;
+      --bg2: #252523;
+      --bg3: #2e2e2b;
+      --text: #f0ede8;
+      --text2: #9b9b96;
+      --text3: #6b6b67;
+      --border: rgba(255,255,255,0.1);
+      --border2: rgba(255,255,255,0.2);
+    }
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+
+  .app { width: 100%; max-width: 640px; }
+
+  h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 14px; color: var(--text2); margin-bottom: 2rem; }
+
+  .search-row { display: flex; gap: 8px; margin-bottom: 1.5rem; }
+  .search-row input {
+    flex: 1; height: 40px; padding: 0 14px;
+    border: 0.5px solid var(--border2); border-radius: var(--radius);
+    background: var(--bg); color: var(--text); font-size: 15px;
+    outline: none;
+  }
+  .search-row input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(55,138,221,0.15); }
+  .search-row button {
+    height: 40px; padding: 0 20px;
+    border: 0.5px solid var(--border2); border-radius: var(--radius);
+    background: transparent; color: var(--text); font-size: 14px; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .search-row button:hover { background: var(--bg2); }
+  .search-row button:disabled { opacity: 0.5; cursor: default; }
+
+  .status { font-size: 13px; color: var(--text2); padding: 1rem 0; text-align: center; }
+  .status.error { color: var(--red); }
+
+  .metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; margin-bottom: 1.5rem; }
+  .metric-card { background: var(--bg2); border-radius: var(--radius); padding: 12px; }
+  .metric-label { font-size: 11px; color: var(--text2); margin-bottom: 4px; }
+  .metric-value { font-size: 20px; font-weight: 500; }
+  .metric-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+  .section-title { font-size: 11px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+
+  .eps-section { margin-bottom: 1.5rem; }
+  .eps-bars { display: flex; align-items: flex-end; gap: 3px; height: 80px; }
+  .eps-bar { flex: 1; border-radius: 2px 2px 0 0; min-width: 4px; transition: opacity 0.2s; }
+  .eps-bar.pos { background: var(--green); }
+  .eps-bar.neg { background: var(--red); }
+  .eps-bar.active { opacity: 1 !important; }
+  .eps-labels { display: flex; gap: 3px; margin-top: 5px; }
+  .eps-lbl { flex: 1; font-size: 9px; color: var(--text3); text-align: center; overflow: hidden; }
+
+  .mappings { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 1.5rem; }
+  .mapping-row {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg2); border-radius: var(--radius); padding: 10px 12px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .map-label { font-size: 12px; color: var(--text2); flex: 1; }
+  .map-val { font-size: 11px; font-weight: 500; text-align: right; max-width: 100px; }
+
+  .player {
+    background: var(--bg);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+  .player-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .ticker-big { font-size: 26px; font-weight: 500; }
+  .rating-badge { font-size: 12px; padding: 4px 12px; border-radius: var(--radius); font-weight: 500; }
+
+  .waveform {
+    height: 64px; background: var(--bg2); border-radius: var(--radius);
+    display: flex; align-items: center; gap: 2px; padding: 0 8px;
+    margin-bottom: 1rem; overflow: hidden;
+  }
+  .wbar { width: 4px; border-radius: 2px; background: var(--blue); transition: height 0.08s; }
+
+  .controls { display: flex; align-items: center; gap: 12px; }
+  .play-btn {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--bg); border: 0.5px solid var(--border2);
+    color: var(--text); font-size: 17px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .play-btn:hover { background: var(--bg2); }
+
+  .progress-wrap { flex: 1; }
+  .progress-bar { height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--blue); width: 0%; transition: width 0.1s linear; }
+  .time-row { display: flex; justify-content: space-between; margin-top: 5px; }
+  .time-display { font-size: 11px; color: var(--text3); }
+
+  .bpm-wrap { display: flex; flex-direction: column; align-items: center; }
+  .bpm-val { font-size: 18px; font-weight: 500; }
+  .bpm-lbl { font-size: 10px; color: var(--text2); }
+
+  .tickers-row { margin-top: 2rem; }
+  .ticker-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    padding: 5px 12px; border-radius: 20px;
+    border: 0.5px solid var(--border2); background: transparent;
+    font-size: 13px; color: var(--text2); cursor: pointer; transition: background 0.15s;
+  }
+  .chip:hover { background: var(--bg2); color: var(--text); }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Financial sonification</h1>
+  <p class="subtitle">Enter a ticker symbol and hear what the company sounds like</p>
+
+  <div class="search-row">
+    <input type="text" id="tickerInput" placeholder="e.g. KO, MSFT, TSLA" maxlength="10" />
+    <button id="analyseBtn" onclick="fetchAndPlay()">Analyse</button>
+  </div>
+
+  <div id="statusMsg" class="status">Ready — try KO for a stable compounder, or TSLA for something more interesting</div>
+
+  <div id="mainContent" class="hidden">
+
+    <div class="player">
+      <div class="player-top">
+        <div class="ticker-big" id="tickerDisplay">--</div>
+        <div class="rating-badge" id="ratingBadge"></div>
+      </div>
+      <div class="waveform" id="waveform"></div>
+      <div class="controls">
+        <button class="play-btn" id="playBtn" onclick="togglePlay()">▶</button>
+        <div class="progress-wrap">
+          <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+          <div class="time-row">
+            <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
+            <span class="time-display" id="loopLabel">looping</span>
+          </div>
+        </div>
+        <div class="bpm-wrap">
+          <div class="bpm-val" id="bpmDisplay">--</div>
+          <div class="bpm-lbl">BPM</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="metrics-grid" id="metricsGrid"></div>
+
+    <div class="eps-section">
+      <div class="section-title">Quarterly EPS — each bar is one beat</div>
+      <div class="eps-bars" id="epsBars"></div>
+      <div class="eps-labels" id="epsLabels"></div>
+    </div>
+
+    <div class="section-title">Musical mapping</div>
+    <div class="mappings" id="mappingsGrid"></div>
+  </div>
+
+  <div class="tickers-row">
+    <div class="section-title" style="margin-bottom:8px">Try these</div>
+    <div class="ticker-chips">
+      <button class="chip" onclick="tryTicker('KO')">KO — Coca-Cola</button>
+      <button class="chip" onclick="tryTicker('MSFT')">MSFT — Microsoft</button>
+      <button class="chip" onclick="tryTicker('TSLA')">TSLA — Tesla</button>
+      <button class="chip" onclick="tryTicker('T')">T — AT&amp;T</button>
+      <button class="chip" onclick="tryTicker('NVDA')">NVDA — Nvidia</button>
+      <button class="chip" onclick="tryTicker('BRK.B')">BRK.B — Berkshire</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let audioCtx = null;
+let isPlaying = false;
+let scheduledNodes = [];
+let startTime = 0;
+let totalDuration = 8;
+let animFrame = null;
+let songData = null;
+let loopTimeout = null;
+
+function getCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function tryTicker(t) {
+  document.getElementById('tickerInput').value = t;
+  fetchAndPlay();
+}
+
+async function fetchAndPlay() {
+  const ticker = document.getElementById('tickerInput').value.trim().toUpperCase();
+  if (!ticker) return setStatus('Please enter a ticker symbol.');
+
+  setStatus('Fetching financial data for ' + ticker + '...');
+  stopPlayback();
+  document.getElementById('mainContent').classList.add('hidden');
+  document.getElementById('analyseBtn').disabled = true;
+
+  try {
+    const [earningsRes, overviewRes] = await Promise.all([
+      fetch('/api/earnings/' + encodeURIComponent(ticker)),
+      fetch('/api/overview/' + encodeURIComponent(ticker))
+    ]);
+    const earnings = await earningsRes.json();
+    const overview = await overviewRes.json();
+
+    if (earnings['Note'] || earnings['Information']) {
+      return setStatus('API rate limit reached. Please wait a minute and try again.', true);
+    }
+    if (!earnings.quarterlyEarnings || !overview.Symbol) {
+      return setStatus('No data found for ' + ticker + '. Check the ticker symbol and try again.', true);
+    }
+
+    songData = buildSong(ticker, earnings, overview);
+    renderUI(ticker, earnings, overview, songData);
+    setStatus('');
+    document.getElementById('mainContent').classList.remove('hidden');
+    startPlayback();
+  } catch(e) {
+    setStatus('Error: ' + e.message, true);
+  } finally {
+    document.getElementById('analyseBtn').disabled = false;
+  }
+}
+
+function buildSong(ticker, earnings, overview) {
+  const quarters = earnings.quarterlyEarnings.slice(0, 16).reverse();
+  const epsList = quarters.map(q => parseFloat(q.reportedEPS) || 0);
+  const surpriseList = quarters.map(q => parseFloat(q.surprisePercentage) || 0);
+
+  const mean = epsList.reduce((a,b)=>a+b,0) / epsList.length;
+  const variance = epsList.reduce((a,b)=>a+Math.pow(b-mean,2),0) / epsList.length;
+  const stdDev = Math.sqrt(variance);
+  const consistencyScore = mean !== 0 ? Math.max(0, 1 - (stdDev / (Math.abs(mean) + 0.01))) : 0;
+
+  const peRatio = parseFloat(overview.PERatio) || 20;
+  const profitMargin = parseFloat(overview.ProfitMargin) || 0.05;
+  const debtToEquity = parseFloat(overview.DebtToEquityRatio) || 0.5;
+  const revenueGrowth = parseFloat(overview.QuarterlyRevenueGrowthYOY) || 0;
+
+  const bpm = Math.round(60 + consistencyScore * 60);
+  const isMinor = mean < 0 || profitMargin < 0.05;
+
+  const baseMidi = 48 + Math.min(24, Math.max(0, Math.round(revenueGrowth * 100 + 12)));
+  const dissonance = Math.min(1, Math.max(0, (debtToEquity - 0.3) / 2));
+  const timbre = profitMargin > 0.2 ? 'sine' : profitMargin > 0.1 ? 'triangle' : 'sawtooth';
+
+  const scale = isMinor ? [0,2,3,5,7,8,10] : [0,2,4,5,7,9,11];
+  const maxEps = Math.max(...epsList.map(Math.abs)) || 1;
+
+  const notes = epsList.map((eps, i) => {
+    const normalized = (eps / maxEps + 1) / 2;
+    const degree = Math.round(normalized * (scale.length - 1));
+    const semitone = scale[Math.min(degree, scale.length-1)];
+    const octaveBoost = eps > mean + stdDev ? 12 : eps < mean - stdDev ? -12 : 0;
+    const midi = baseMidi + semitone + octaveBoost;
+    const freq = 440 * Math.pow(2, (midi - 69) / 12);
+    const accent = Math.abs(surpriseList[i]) > 10;
+    return { freq, accent, eps };
+  });
+
+  const chordSemitones = isMinor ? [0,3,7] : [0,4,7];
+  if (dissonance > 0.4) chordSemitones.push(isMinor ? 10 : 11);
+  const chordFreqs = chordSemitones.map(s => {
+    const midi = baseMidi - 12 + s;
+    return 440 * Math.pow(2, (midi - 69) / 12);
+  });
+
+  const score = consistencyScore * 0.4 + (mean > 0 ? 0.2 : 0) + (profitMargin > 0.15 ? 0.2 : 0) + (debtToEquity < 1 ? 0.1 : 0) + (revenueGrowth > 0 ? 0.1 : 0);
+  let rating, ratingColor;
+  if (score > 0.75) { rating = 'Harmonious'; ratingColor = '#639922'; }
+  else if (score > 0.5) { rating = 'Melodic'; ratingColor = '#BA7517'; }
+  else if (score > 0.3) { rating = 'Discordant'; ratingColor = '#D85A30'; }
+  else { rating = 'Cacophonous'; ratingColor = '#E24B4A'; }
+
+  return { bpm, notes, chordFreqs, timbre, dissonance, isMinor, consistencyScore, profitMargin, debtToEquity, revenueGrowth, mean, epsList, rating, ratingColor, peRatio, quarters };
+}
+
+function renderUI(ticker, earnings, overview, song) {
+  document.getElementById('tickerDisplay').textContent = ticker;
+  const badge = document.getElementById('ratingBadge');
+  badge.textContent = song.rating;
+  badge.style.background = song.ratingColor + '22';
+  badge.style.color = song.ratingColor;
+  badge.style.border = '0.5px solid ' + song.ratingColor + '55';
+
+  document.getElementById('bpmDisplay').textContent = song.bpm;
+  totalDuration = song.notes.length * (60 / song.bpm);
+
+  const fmt = (v, d=2) => isNaN(v) ? 'N/A' : parseFloat(v).toFixed(d);
+  const metrics = [
+    { label: 'Avg EPS', value: '$' + fmt(song.mean), sub: song.isMinor ? 'minor key' : 'major key' },
+    { label: 'Consistency', value: Math.round(song.consistencyScore * 100) + '%', sub: 'rhythm stability' },
+    { label: 'Profit margin', value: fmt(song.profitMargin * 100, 1) + '%', sub: 'timbre: ' + song.timbre },
+    { label: 'Debt / equity', value: fmt(song.debtToEquity), sub: 'dissonance ' + Math.round(song.dissonance * 100) + '%' },
+  ];
+  document.getElementById('metricsGrid').innerHTML = metrics.map(m => `
+    <div class="metric-card">
+      <div class="metric-label">${m.label}</div>
+      <div class="metric-value">${m.value}</div>
+      <div class="metric-sub">${m.sub}</div>
+    </div>`).join('');
+
+  const maxEps = Math.max(...song.epsList.map(Math.abs)) || 1;
+  document.getElementById('epsBars').innerHTML = song.epsList.map((eps, i) => {
+    const h = Math.max(4, Math.round(Math.abs(eps) / maxEps * 72));
+    return `<div class="eps-bar ${eps >= 0 ? 'pos' : 'neg'}" id="epsbar${i}" style="height:${h}px" title="${eps.toFixed(2)}"></div>`;
+  }).join('');
+  document.getElementById('epsLabels').innerHTML = song.quarters.map(q =>
+    `<div class="eps-lbl">${q.fiscalDateEnding ? q.fiscalDateEnding.slice(2,7) : ''}</div>`
+  ).join('');
+
+  const mappings = [
+    { color: '#378ADD', label: 'Rhythm / BPM', value: song.bpm + ' bpm from consistency' },
+    { color: song.isMinor ? '#D85A30' : '#639922', label: 'Key', value: song.isMinor ? 'Minor (weak earnings)' : 'Major (strong earnings)' },
+    { color: '#BA7517', label: 'Pitch register', value: 'Growth → ' + (song.revenueGrowth > 0 ? 'higher register' : 'lower register') },
+    { color: '#7F77DD', label: 'Timbre / wave', value: song.timbre + ' (' + Math.round(song.profitMargin*100) + '% margin)' },
+    { color: '#E24B4A', label: 'Dissonance', value: Math.round(song.dissonance * 100) + '% from debt load' },
+    { color: '#1D9E75', label: 'Accents', value: 'Earnings surprises > 10%' },
+  ];
+  document.getElementById('mappingsGrid').innerHTML = mappings.map(m => `
+    <div class="mapping-row">
+      <div class="dot" style="background:${m.color}"></div>
+      <div class="map-label">${m.label}</div>
+      <div class="map-val" style="color:${m.color}">${m.value}</div>
+    </div>`).join('');
+
+  document.getElementById('waveform').innerHTML =
+    Array.from({length:52}, (_,i) => `<div class="wbar" id="wbar${i}" style="height:4px"></div>`).join('');
+}
+
+function startPlayback() {
+  if (!songData) return;
+  stopPlayback();
+  isPlaying = true;
+  document.getElementById('playBtn').textContent = '⏸';
+  playSequence();
+}
+
+function playSequence() {
+  const ctx = getCtx();
+  if (ctx.state === 'suspended') ctx.resume();
+  startTime = ctx.currentTime;
+  scheduledNodes = [];
+  const { notes, chordFreqs, timbre, dissonance, bpm } = songData;
+  const beatDur = 60 / bpm;
+  totalDuration = notes.length * beatDur;
+
+  chordFreqs.forEach((freq, ci) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, startTime);
+    gain.gain.setValueAtTime(0.04 + (ci === 0 ? 0.03 : 0), startTime);
+    gain.gain.linearRampToValueAtTime(0.001, startTime + totalDuration - 0.05);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(startTime); osc.stop(startTime + totalDuration);
+    scheduledNodes.push(osc, gain);
+  });
+
+  notes.forEach((note, i) => {
+    const t = startTime + i * beatDur;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = timbre;
+    osc.frequency.setValueAtTime(note.freq, t);
+    const vol = note.accent ? 0.18 : 0.12;
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(vol, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + beatDur * 0.82);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(t); osc.stop(t + beatDur);
+    scheduledNodes.push(osc, gain);
+
+    if (dissonance > 0.3 && note.accent) {
+      const osc2 = ctx.createOscillator();
+      const g2 = ctx.createGain();
+      osc2.type = 'sawtooth';
+      osc2.frequency.setValueAtTime(note.freq * 1.059, t);
+      g2.gain.setValueAtTime(0.06 * dissonance, t);
+      g2.gain.exponentialRampToValueAtTime(0.001, t + beatDur * 0.3);
+      osc2.connect(g2); g2.connect(ctx.destination);
+      osc2.start(t); osc2.stop(t + beatDur * 0.3);
+      scheduledNodes.push(osc2, g2);
+    }
+  });
+
+  animateWaveform();
+  loopTimeout = setTimeout(() => {
+    if (isPlaying) playSequence();
+  }, totalDuration * 1000 + 200);
+}
+
+function animateWaveform() {
+  if (animFrame) cancelAnimationFrame(animFrame);
+  const ctx = getCtx();
+  const { notes, bpm, epsList } = songData;
+  const beatDur = 60 / bpm;
+
+  function frame() {
+    if (!isPlaying) return;
+    const elapsed = ctx.currentTime - startTime;
+    const progress = Math.min(1, elapsed / totalDuration);
+
+    document.getElementById('progressFill').style.width = (progress * 100).toFixed(1) + '%';
+
+    const secs = Math.max(0, Math.floor(elapsed));
+    const totalSecs = Math.floor(totalDuration);
+    document.getElementById('timeDisplay').textContent =
+      `${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')} / ${Math.floor(totalSecs/60)}:${String(totalSecs%60).padStart(2,'0')}`;
+
+    const currentBeat = Math.floor(elapsed / beatDur);
+    const beatPhase = (elapsed % beatDur) / beatDur;
+
+    // Highlight active EPS bar
+    epsList.forEach((_, i) => {
+      const el = document.getElementById('epsbar' + i);
+      if (el) el.style.opacity = i === currentBeat ? '1' : '0.45';
+    });
+
+    for (let i = 0; i < 52; i++) {
+      const bar = document.getElementById('wbar' + i);
+      if (!bar) continue;
+      const noteIdx = Math.floor((i / 52) * notes.length);
+      const note = notes[Math.min(noteIdx, notes.length-1)];
+      const isActive = noteIdx === currentBeat;
+      const base = 3 + (note.eps > 0 ? 18 : 5);
+      const pulse = isActive ? Math.max(0, 1 - beatPhase * 2.5) : 0;
+      const h = base + pulse * 38 + Math.sin(i * 0.9 + elapsed * 4) * (isActive ? 9 : 2.5);
+      bar.style.height = Math.max(3, Math.round(h)) + 'px';
+      bar.style.background = note.accent && isActive ? '#D85A30' : note.eps < 0 ? '#E24B4A' : '#378ADD';
+    }
+
+    animFrame = requestAnimationFrame(frame);
+  }
+  animFrame = requestAnimationFrame(frame);
+}
+
+function togglePlay() {
+  if (isPlaying) {
+    stopPlayback();
+    document.getElementById('loopLabel').textContent = 'paused';
+  } else {
+    document.getElementById('loopLabel').textContent = 'looping';
+    startPlayback();
+  }
+}
+
+function stopPlayback() {
+  isPlaying = false;
+  document.getElementById('playBtn').textContent = '▶';
+  if (loopTimeout) clearTimeout(loopTimeout);
+  if (animFrame) cancelAnimationFrame(animFrame);
+  scheduledNodes.forEach(n => { try { n.stop ? n.stop() : n.disconnect(); } catch(e){} });
+  scheduledNodes = [];
+  const pf = document.getElementById('progressFill');
+  if (pf) { pf.style.width = '0%'; }
+  for (let i = 0; i < 52; i++) {
+    const b = document.getElementById('wbar' + i);
+    if (b) b.style.height = '4px';
+  }
+}
+
+function setStatus(msg, isError=false) {
+  const el = document.getElementById('statusMsg');
+  el.textContent = msg;
+  el.className = 'status' + (isError ? ' error' : '');
+  el.style.display = msg ? 'block' : 'none';
+}
+
+document.getElementById('tickerInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') fetchAndPlay();
+});
+</script>
+</body>
+</html>
